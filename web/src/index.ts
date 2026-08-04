@@ -91,6 +91,101 @@ app.get("/api/track/:token", async (c) => {
   });
 });
 
+app.get("/api/nearby", async (c) => {
+  const lat = Number(c.req.query("lat"));
+  const lon = Number(c.req.query("lon"));
+  if (!validCoords(lat, lon)) return err(c, 400, "bad_coords", "坐标不合法");
+  const box = bboxAround(lat, lon, PICKUP_RADIUS_KM);
+  const rows = await c.env.DB.prepare(
+    `SELECT public_id, lat, lon, beached_at, distance_km, created_at
+     FROM bottles WHERE status = 'beached' AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?`
+  ).bind(box.latMin, box.latMax, box.lonMin, box.lonMax).all();
+  const bottles = rows.results
+    .filter((b) => haversineKm(lat, lon, b.lat as number, b.lon as number) <= PICKUP_RADIUS_KM)
+    .map((b) => ({
+      public_id: b.public_id,
+      lat: b.lat,
+      lon: b.lon,
+      beached_at: b.beached_at,
+      distance_km: b.distance_km,
+      days_at_sea: Math.max(0, Math.round(
+        (Date.parse(b.beached_at as string) - Date.parse(b.created_at as string)) / 86400e3)),
+    }));
+  return c.json({ bottles });
+});
+
+/** 找到搁浅瓶并做距离校验；返回 Response 表示已出错。 */
+async function findBeachedNearby(c: C, publicId: string, lat: unknown, lon: unknown) {
+  if (!validCoords(lat, lon)) return err(c, 400, "bad_coords", "坐标不合法");
+  const b = await c.env.DB.prepare(
+    `SELECT id, status, lat, lon FROM bottles WHERE public_id = ?`
+  ).bind(publicId).first();
+  if (!b || b.status !== "beached") return err(c, 404, "not_found", "这里没有这只瓶子");
+  if (haversineKm(lat as number, lon as number, b.lat as number, b.lon as number) > PICKUP_RADIUS_KM)
+    return err(c, 403, "too_far", "你离这只瓶子太远了");
+  return b as { id: number; lat: number; lon: number };
+}
+
+app.post("/api/bottles/:publicId/read", async (c) => {
+  const { lat, lon } = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const b = await findBeachedNearby(c, c.req.param("publicId"), lat, lon);
+  if (b instanceof Response) return b;
+  const msgs = await c.env.DB.prepare(
+    `SELECT content, lat, lon, created_at FROM messages WHERE bottle_id = ? ORDER BY id`
+  ).bind(b.id).all();
+  return c.json({ messages: msgs.results });
+});
+
+app.post("/api/bottles/:publicId/pickup", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const { content, lat, lon } = body;
+  if (!validCoords(lat, lon)) return err(c, 400, "bad_coords", "坐标不合法");
+  const row = await c.env.DB.prepare(
+    `SELECT id, status, lat, lon, beached_at FROM bottles WHERE public_id = ?`
+  ).bind(c.req.param("publicId")).first();
+  if (!row) return err(c, 404, "not_found", "这里没有这只瓶子");
+  if (row.status !== "beached") {
+    // beached_at IS NULL 说明刚被捡走（我方 batch UPDATE 清空了它），否则是漂流中的瓶子
+    if (row.beached_at === null) return err(c, 409, "already_picked", "这只瓶子刚被别人捡走了");
+    return err(c, 404, "not_found", "这里没有这只瓶子");
+  }
+  const b = row as { id: number; lat: number; lon: number };
+  if (haversineKm(lat as number, lon as number, b.lat, b.lon) > PICKUP_RADIUS_KM)
+    return err(c, 403, "too_far", "你离这只瓶子太远了");
+  const bad = await checkSubmission(c, content, lat, lon);
+  if (bad) return bad;
+  const mask = await getMask(c.env);
+  const snap = mask.snapToOcean(b.lat, b.lon); // 从搁浅点回海
+  if (!snap) return err(c, 400, "no_ocean", "附近找不到海域");
+  const t = now();
+  const day = t.slice(0, 10);
+  const token = newToken();
+  const results = await c.env.DB.batch([
+    // 第1条：原子抢占。launched_at=t 同时充当本次请求的事务哨兵
+    c.env.DB.prepare(
+      `UPDATE bottles SET status='drifting', lat=?, lon=?, beached_at=NULL, launched_at=?, simulated_to=?
+       WHERE id = ? AND status = 'beached'`
+    ).bind(snap.lat, snap.lon, t, day, b.id),
+    // 第2-4条：仅当本次 UPDATE 抢占成功（launched_at 等于我们的 t）才会插到行
+    c.env.DB.prepare(
+      `INSERT INTO tokens (token, bottle_id, role, created_at)
+       SELECT ?, id, 'picker', ? FROM bottles WHERE id = ? AND launched_at = ?`
+    ).bind(token, t, b.id, t),
+    c.env.DB.prepare(
+      `INSERT INTO messages (bottle_id, content, lat, lon, created_at)
+       SELECT id, ?, ?, ?, ? FROM bottles WHERE id = ? AND launched_at = ?`
+    ).bind((content as string).trim(), snap.lat, snap.lon, t, b.id, t),
+    c.env.DB.prepare(
+      `INSERT INTO track_points (bottle_id, ts, lat, lon)
+       SELECT id, ?, ?, ? FROM bottles WHERE id = ? AND launched_at = ?`
+    ).bind(t, snap.lat, snap.lon, b.id, t),
+  ]);
+  // batch 是单事务；抢占失败时第1条 changes=0 且哨兵不匹配、子表零插入
+  if ((results[0].meta as { changes?: number }).changes === 0)
+    return err(c, 409, "already_picked", "这只瓶子刚被别人捡走了");
+  return c.json({ token });
+});
+
 // 追踪页：/b/<token> 由前端 track.html 渲染
 app.get("/b/*", (c) => c.env.ASSETS.fetch(new Request(new URL("/track.html", c.req.url))));
 
