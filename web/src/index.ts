@@ -47,18 +47,24 @@ app.post("/api/bottles", async (c) => {
   const day = t.slice(0, 10);
   const token = newToken();
   const publicId = newPublicId();
-  const ins = await c.env.DB.prepare(
-    `INSERT INTO bottles (public_id, status, lat, lon, launched_at, simulated_to, distance_km, created_at)
-     VALUES (?, 'drifting', ?, ?, ?, ?, 0, ?)`
-  ).bind(publicId, snap.lat, snap.lon, t, day, t).run();
-  const bottleId = ins.meta.last_row_id;
+  // 单事务写入：batch 全成或全败，靠唯一 public_id 关联刚插入的 bottle 行，杜绝孤儿行
   await c.env.DB.batch([
-    c.env.DB.prepare(`INSERT INTO tokens (token, bottle_id, role, created_at) VALUES (?, ?, 'dropper', ?)`)
-      .bind(token, bottleId, t),
-    c.env.DB.prepare(`INSERT INTO messages (bottle_id, content, lat, lon, created_at) VALUES (?, ?, ?, ?, ?)`)
-      .bind(bottleId, (content as string).trim(), snap.lat, snap.lon, t),
-    c.env.DB.prepare(`INSERT INTO track_points (bottle_id, ts, lat, lon) VALUES (?, ?, ?, ?)`)
-      .bind(bottleId, t, snap.lat, snap.lon),
+    c.env.DB.prepare(
+      `INSERT INTO bottles (public_id, status, lat, lon, launched_at, simulated_to, distance_km, created_at)
+       VALUES (?, 'drifting', ?, ?, ?, ?, 0, ?)`
+    ).bind(publicId, snap.lat, snap.lon, t, day, t),
+    c.env.DB.prepare(
+      `INSERT INTO tokens (token, bottle_id, role, created_at)
+       SELECT ?, id, 'dropper', ? FROM bottles WHERE public_id = ?`
+    ).bind(token, t, publicId),
+    c.env.DB.prepare(
+      `INSERT INTO messages (bottle_id, content, lat, lon, created_at)
+       SELECT id, ?, ?, ?, ? FROM bottles WHERE public_id = ?`
+    ).bind((content as string).trim(), snap.lat, snap.lon, t, publicId),
+    c.env.DB.prepare(
+      `INSERT INTO track_points (bottle_id, ts, lat, lon)
+       SELECT id, ?, ?, ? FROM bottles WHERE public_id = ?`
+    ).bind(t, snap.lat, snap.lon, publicId),
   ]);
   return c.json({ token, position: { lat: snap.lat, lon: snap.lon }, snapped_km: Math.round(snap.snappedKm * 10) / 10 });
 });
