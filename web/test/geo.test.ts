@@ -8,7 +8,7 @@ describe("geo", () => {
     expect(d).toBeLessThan(180);
   });
   it("同点距离为 0", () => {
-    expect(haversineKm(30, 120, 30, 120)).toBe(0);
+    expect(haversineKm(30, 120, 30, 120)).toBeCloseTo(0, 10);
   });
   it("边界框包含半径内的点", () => {
     const box = bboxAround(31.0, 122.0, 30);

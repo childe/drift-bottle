@@ -10,7 +10,11 @@ export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: numb
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-export function bboxAround(lat: number, lon: number, radiusKm: number) {
+export function bboxAround(
+  lat: number,
+  lon: number,
+  radiusKm: number
+): { latMin: number; latMax: number; lonMin: number; lonMax: number } {
   const dLat = radiusKm / 111.32;
   const dLon = radiusKm / (111.32 * Math.max(Math.cos((lat * Math.PI) / 180), 0.01));
   return { latMin: lat - dLat, latMax: lat + dLat, lonMin: lon - dLon, lonMax: lon + dLon };
