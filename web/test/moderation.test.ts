@@ -20,4 +20,8 @@ describe("moderate", () => {
     const ai = fakeAi(async () => ({ response: "???" }));
     expect(await moderate(ai, "x")).toBe("unavailable");
   });
+  it("safe 带附加文本 → unavailable（fail-closed，精确匹配）", async () => {
+    const ai = fakeAi(async () => ({ response: "safe with caveats" }));
+    expect(await moderate(ai, "x")).toBe("unavailable");
+  });
 });

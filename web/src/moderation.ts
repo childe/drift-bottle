@@ -6,7 +6,7 @@ export async function moderate(ai: Ai, content: string): Promise<ModerationResul
       messages: [{ role: "user", content }],
     } as never)) as { response?: string };
     const text = (res?.response ?? "").trim().toLowerCase();
-    if (text.startsWith("safe")) return "safe";
+    if (text === "safe") return "safe";
     if (text.startsWith("unsafe")) return "unsafe";
     return "unavailable";
   } catch {
