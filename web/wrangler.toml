@@ -1,0 +1,16 @@
+name = "drift-bottle"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+
+[assets]
+directory = "public"
+binding = "ASSETS"
+run_worker_first = ["/api/*", "/b/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "drift-bottle"
+database_id = "TBD-AFTER-D1-CREATE"
+
+[ai]
+binding = "AI"

@@ -3,3 +3,4 @@ trajectory.html
 __pycache__/
 .venv/
 node_modules/
+.wrangler/
