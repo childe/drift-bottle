@@ -86,10 +86,10 @@ describe("nearby / read / pickup", () => {
     const second = await post("/api/bottles/beachedpub01/pickup", { content: "我后", lat: 31.05, lon: 121.1 });
     expect(second.status).toBe(409);
   });
-  it("漂流中的瓶子不可读不可捡（404）", async () => {
+  it("漂流中的瓶子读/捡返回 409 已被捡走", async () => {
     await makeBeachedBottle();
     await env.DB.prepare(`UPDATE bottles SET status='drifting' WHERE public_id='beachedpub01'`).run();
-    expect((await post("/api/bottles/beachedpub01/read", { lat: 31.05, lon: 121.1 })).status).toBe(404);
-    expect((await post("/api/bottles/beachedpub01/pickup", { content: "x", lat: 31.05, lon: 121.1 })).status).toBe(404);
+    expect((await post("/api/bottles/beachedpub01/read", { lat: 31.05, lon: 121.1 })).status).toBe(409);
+    expect((await post("/api/bottles/beachedpub01/pickup", { content: "x", lat: 31.05, lon: 121.1 })).status).toBe(409);
   });
 });

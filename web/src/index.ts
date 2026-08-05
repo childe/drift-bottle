@@ -120,7 +120,9 @@ async function findBeachedNearby(c: C, publicId: string, lat: unknown, lon: unkn
   const b = await c.env.DB.prepare(
     `SELECT id, status, lat, lon FROM bottles WHERE public_id = ?`
   ).bind(publicId).first();
-  if (!b || b.status !== "beached") return err(c, 404, "not_found", "这里没有这只瓶子");
+  if (!b) return err(c, 404, "not_found", "这里没有这只瓶子");
+  // public_id 只经由 nearby（仅列出 beached 瓶）泄露，非 beached 必然是刚被捡走重新入海
+  if (b.status !== "beached") return err(c, 409, "already_picked", "这只瓶子刚被别人捡走了");
   if (haversineKm(lat as number, lon as number, b.lat as number, b.lon as number) > PICKUP_RADIUS_KM)
     return err(c, 403, "too_far", "你离这只瓶子太远了");
   return b as { id: number; lat: number; lon: number };
@@ -139,19 +141,8 @@ app.post("/api/bottles/:publicId/read", async (c) => {
 app.post("/api/bottles/:publicId/pickup", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
   const { content, lat, lon } = body;
-  if (!validCoords(lat, lon)) return err(c, 400, "bad_coords", "坐标不合法");
-  const row = await c.env.DB.prepare(
-    `SELECT id, status, lat, lon, beached_at FROM bottles WHERE public_id = ?`
-  ).bind(c.req.param("publicId")).first();
-  if (!row) return err(c, 404, "not_found", "这里没有这只瓶子");
-  if (row.status !== "beached") {
-    // beached_at IS NULL 说明刚被捡走（我方 batch UPDATE 清空了它），否则是漂流中的瓶子
-    if (row.beached_at === null) return err(c, 409, "already_picked", "这只瓶子刚被别人捡走了");
-    return err(c, 404, "not_found", "这里没有这只瓶子");
-  }
-  const b = row as { id: number; lat: number; lon: number };
-  if (haversineKm(lat as number, lon as number, b.lat, b.lon) > PICKUP_RADIUS_KM)
-    return err(c, 403, "too_far", "你离这只瓶子太远了");
+  const b = await findBeachedNearby(c, c.req.param("publicId"), lat, lon);
+  if (b instanceof Response) return b;
   const bad = await checkSubmission(c, content, lat, lon);
   if (bad) return bad;
   const mask = await getMask(c.env);
@@ -181,6 +172,7 @@ app.post("/api/bottles/:publicId/pickup", async (c) => {
     ).bind(t, snap.lat, snap.lon, b.id, t),
   ]);
   // batch 是单事务；抢占失败时第1条 changes=0 且哨兵不匹配、子表零插入
+  // 分工：findBeachedNearby 前置检查管顺序滞后请求，此哨兵管真·同瞬并发竞争
   if ((results[0].meta as { changes?: number }).changes === 0)
     return err(c, 409, "already_picked", "这只瓶子刚被别人捡走了");
   return c.json({ token });
