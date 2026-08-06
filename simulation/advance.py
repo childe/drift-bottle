@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 import pathlib
-import sys
 from datetime import date, timedelta, timezone, datetime
 
 import numpy as np

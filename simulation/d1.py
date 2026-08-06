@@ -14,6 +14,12 @@ class D1Client:
         self.headers = {"Authorization": f"Bearer {api_token}"}
 
     def query(self, sql: str, params: list | None = None) -> list[dict]:
+        """执行 SQL，返回结果行。
+
+        注意：多语句 SQL（';' 分隔）仅返回第一条语句的 results；
+        SELECT 请保持单语句，多语句写回不要依赖返回值。
+        HTTP 或业务失败抛 RuntimeError / requests.HTTPError。
+        """
         resp = requests.post(
             self.url,
             headers=self.headers,
