@@ -54,7 +54,8 @@ document.getElementById("dropBtn").onclick = () => {
         <h3>🌊 瓶子已入海！</h3>
         <p>入海点距你 ${data.snapped_km} km。收好你的追踪链接（仅此一次，丢了找不回）：</p>
         <a class="token-link" href="${url}">${url}</a>
-        <button onclick="navigator.clipboard.writeText('${url}')">复制链接</button>`);
+        <button id="copyLink">复制链接</button>`);
+      document.getElementById("copyLink").addEventListener("click", () => navigator.clipboard.writeText(url));
       L.marker([data.position.lat, data.position.lon]).addTo(map).bindPopup("你的瓶子入海点").openPopup();
       map.setView([data.position.lat, data.position.lon], 7);
     } catch (e) { document.getElementById("dropErr").textContent = e.message; }
@@ -62,17 +63,23 @@ document.getElementById("dropBtn").onclick = () => {
 };
 
 // ---- 我的瓶子 ----
+function loadMine() {
+  try {
+    const mine = JSON.parse(localStorage.myBottles || "[]");
+    return Array.isArray(mine) ? mine : [];
+  } catch { return []; }
+}
 function saveMine(token) {
-  const mine = JSON.parse(localStorage.myBottles || "[]");
+  const mine = loadMine();
   mine.push({ token, created_at: new Date().toISOString() });
   localStorage.myBottles = JSON.stringify(mine);
   renderMine();
 }
 function renderMine() {
-  const mine = JSON.parse(localStorage.myBottles || "[]");
+  const mine = loadMine();
   document.getElementById("mine").innerHTML = mine.length
     ? `<h3>我的瓶子</h3>` + mine.map((b) =>
-        `<div class="bottle-item"><a href="/b/${b.token}">🍾 ${b.created_at.slice(0, 10)} 投出的瓶子</a></div>`).join("")
+        `<div class="bottle-item"><a href="/b/${escapeHtml(b.token)}">🍾 ${escapeHtml(b.created_at.slice(0, 10))} 投出的瓶子</a></div>`).join("")
     : "";
 }
 renderMine();
