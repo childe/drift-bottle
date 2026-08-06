@@ -37,6 +37,8 @@ class CurrentField:
     def __init__(self, ds: xr.Dataset):
         if "depth" in ds.dims:
             ds = ds.isel(depth=0)
+        # 保存 time 坐标，squeeze(drop=True) 会丢弃标量时间坐标
+        _times_raw = ds.time.values if "time" in ds.coords else None
         ds = ds.squeeze(drop=True)
         lon = ds.longitude.values.astype(float)
         self.lat = ds.latitude.values.astype(float)
@@ -44,7 +46,7 @@ class CurrentField:
         v = ds.vo.values
         if u.ndim == 2:  # 单天文件无 time 维
             u, v = u[None], v[None]
-            times = np.atleast_1d(ds.time.values)
+            times = np.atleast_1d(ds.time.values if "time" in ds.coords else _times_raw)
         else:
             times = ds.time.values
         # 经度环绕：末尾补第一列
