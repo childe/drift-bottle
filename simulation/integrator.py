@@ -63,6 +63,11 @@ def advance_day(field, day: date, lats: np.ndarray, lons: np.ndarray) -> DayResu
             v = (v1 + v2) / 2
             new_lat = np.clip(lats + v * DT / M_PER_DEG, -89.9, 89.9)
             new_lon = _wrap_lon(lons + u * DT / (M_PER_DEG * cos_lat))
+            # 落点为陆地/NaN 邻域 → 就地搁浅，停在最后海上位置，不进陆地
+            u_dst, v_dst = field.velocity(t + DT, new_lat, new_lon)
+            land_ahead = active & (np.isnan(u_dst) | np.isnan(v_dst))
+            beached_hour[land_ahead] = h
+            active &= ~land_ahead
             dist = _haversine_km(lats, lons, new_lat, new_lon)
             lats = np.where(active, new_lat, lats)
             lons = np.where(active, new_lon, lons)

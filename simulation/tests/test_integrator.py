@@ -37,11 +37,12 @@ def test_eastward_drift_distance():
 
 
 def test_westward_bottle_beaches():
-    # 向西 1.0 m/s，从 lon=0.5 出发，撞上 lon=0 陆地列 → 搁浅
+    # 向西 1.0 m/s，从 lon=1.5（干净的 [1,2] 格）出发，
+    # 约第 15 小时进入 lon=0 陆地列的含 NaN 插值格 → 搁浅
     field = CurrentField(synthetic_ds(u_val=-1.0))
-    r = advance_day(field, date(2026, 8, 1), np.array([10.0]), np.array([0.5]))
-    assert r.beached_hour[0] >= 0
-    assert r.lons[0] > -0.5  # 停在最后一个海上位置，不进陆地
+    r = advance_day(field, date(2026, 8, 1), np.array([10.0]), np.array([1.5]))
+    assert r.beached_hour[0] > 5  # 确实漂了一段才搁浅
+    assert r.lons[0] > 1.0  # 停在最后一个海上位置，不进陆地
 
 
 def test_velocity_time_interp_and_clamp():

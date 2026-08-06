@@ -62,7 +62,8 @@ class CurrentField:
     def _interp_2d(
         self, arr2d: np.ndarray, lats: np.ndarray, lons: np.ndarray
     ) -> np.ndarray:
-        lons = np.where(lons < self.lon[0], lons + 360.0, lons)
+        # 模运算归一化到 [lon[0], lon[0]+360)，任意越界均可修正
+        lons = (lons - self.lon[0]) % 360.0 + self.lon[0]
         lons = np.where(lons >= self.lon[-1], lons - 360.0, lons)
         ix = np.clip(np.searchsorted(self.lon, lons) - 1, 0, len(self.lon) - 2)
         iy = np.clip(np.searchsorted(self.lat, lats) - 1, 0, len(self.lat) - 2)
