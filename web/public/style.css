@@ -1,0 +1,28 @@
+html, body { height: 100%; margin: 0; font: 15px/1.6 -apple-system, "PingFang SC", sans-serif; }
+#map { position: absolute; inset: 0; }
+#panel {
+  position: absolute; top: 12px; right: 12px; z-index: 1000; width: 300px; max-height: 85vh;
+  overflow-y: auto; background: rgba(255,255,255,.95); border-radius: 12px; padding: 14px 16px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.25);
+}
+#panel h1 { font-size: 20px; margin: 0 0 6px; }
+.hint { color: #666; font-size: 13px; margin: 4px 0 10px; }
+button { border: 0; border-radius: 8px; background: #1668dc; color: #fff; padding: 9px 14px;
+  cursor: pointer; font-size: 15px; width: 100%; }
+button:hover { background: #0f57bd; }
+button.secondary { background: #f0f2f5; color: #333; }
+.bottle-item { border-top: 1px solid #eee; padding: 8px 0; font-size: 14px; }
+.bottle-item a { color: #1668dc; }
+textarea { width: 100%; box-sizing: border-box; height: 120px; padding: 8px; font: inherit;
+  border: 1px solid #ccc; border-radius: 8px; resize: vertical; }
+#modal { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.45);
+  display: flex; align-items: center; justify-content: center; }
+#modal.hidden { display: none; }
+.modal-box { background: #fff; border-radius: 12px; padding: 18px; width: min(420px, 90vw);
+  max-height: 80vh; overflow-y: auto; }
+.letter { background: #f7f8fa; border-radius: 8px; padding: 10px; margin: 8px 0; white-space: pre-wrap; }
+.letter .meta { color: #999; font-size: 12px; margin-top: 4px; }
+.error { color: #d4380d; font-size: 13px; }
+.token-link { word-break: break-all; background: #f0f7ff; padding: 8px; border-radius: 8px;
+  display: block; margin: 8px 0; }
+h3 { font-size: 16px; margin: 14px 0 6px; }
