@@ -6,6 +6,7 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 let userPos = null;
 let userMarker = null;
 let userPosLabelKey = null; // 记住当前定位标签的 i18n key，供语言切换时重渲染
+let geoFailed = false; // 定位失败标记，供语言切换时重渲染 hint
 
 function updateHint() {
   const el = document.getElementById("hint");
@@ -27,7 +28,7 @@ function setUserPos(lat, lon, labelKey) {
 
 navigator.geolocation?.getCurrentPosition(
   (p) => { setUserPos(p.coords.latitude, p.coords.longitude, "pos_mine"); map.setView([p.coords.latitude, p.coords.longitude], 8); },
-  () => { document.getElementById("hint").textContent = t("hint_locate_fail", getLang()); }
+  () => { geoFailed = true; document.getElementById("hint").textContent = t("hint_locate_fail", getLang()); }
 );
 map.on("click", (e) => setUserPos(e.latlng.lat, e.latlng.lng, "pos_picked"));
 
@@ -66,7 +67,7 @@ document.getElementById("dropBtn").onclick = () => {
       showModal(`
         <h3>${t("drop_success_title", getLang())}</h3>
         <p>${tf("drop_success_body", getLang(), { km: data.snapped_km })}</p>
-        <a class="token-link" href="${url}">${url}</a>
+        <a class="token-link" href="${escapeHtml(url)}">${escapeHtml(url)}</a>
         <button id="copyLink">${t("copy_link", getLang())}</button>`);
       document.getElementById("copyLink").addEventListener("click", async (e) => {
         try {
@@ -158,7 +159,7 @@ async function openBottle(b) {
         showModal(`
           <h3>${t("pickup_success_title", getLang())}</h3>
           <p>${t("pickup_success_body", getLang())}</p>
-          <a class="token-link" href="${url}">${url}</a>`);
+          <a class="token-link" href="${escapeHtml(url)}">${escapeHtml(url)}</a>`);
         loadNearby();
       } catch (e) { document.getElementById("pickErr").textContent = e.message; }
     };
@@ -171,7 +172,12 @@ function escapeHtml(s) {
 
 // ---- 语言切换：重渲染动态区（静态区由 i18n.js applyI18n 处理）----
 window.addEventListener("i18n:changed", () => {
-  if (userPos && userPosLabelKey) { updateHint(); }
+  if (userPos && userPosLabelKey) {
+    updateHint();
+  } else if (geoFailed) {
+    document.getElementById("hint").textContent = t("hint_locate_fail", getLang());
+  }
+  if (userMarker && userPosLabelKey) userMarker.setPopupContent(t(userPosLabelKey, getLang()));
   renderMine();
   loadNearby();
   modal.classList.add("hidden"); // 关掉可能开着的弹窗，避免旧语言残留
