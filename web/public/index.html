@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<title>漂流瓶 · 让真实的洋流带走你的信</title>
+<title data-i18n="doc_title_home">漂流瓶 · 让真实的洋流带走你的信</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -11,9 +11,12 @@
 <body>
 <div id="map"></div>
 <div id="panel">
-  <h1>🍾 漂流瓶</h1>
-  <p class="hint" id="hint">正在定位…（也可以点击地图选择位置）</p>
-  <button id="dropBtn">写一封信，投进大海</button>
+  <div id="langSwitch">
+    <span data-lang-btn="zh">中</span> / <span data-lang-btn="en">EN</span>
+  </div>
+  <h1 data-i18n="app_title">🍾 漂流瓶</h1>
+  <p class="hint" id="hint" data-i18n="hint_locating">正在定位…（也可以点击地图选择位置）</p>
+  <button id="dropBtn" data-i18n="drop_btn">写一封信，投进大海</button>
   <div id="nearby"></div>
   <div id="mine"></div>
 </div>
@@ -23,6 +26,7 @@
     <div id="modalBody"></div>
   </div>
 </div>
+<script src="/i18n.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
