@@ -152,28 +152,28 @@ app.post("/api/bottles/:publicId/pickup", async (c) => {
   const day = t.slice(0, 10);
   const token = newToken();
   const results = await c.env.DB.batch([
-    // 第1条：原子抢占。launched_at=t 同时充当本次请求的事务哨兵
-    c.env.DB.prepare(
-      `UPDATE bottles SET status='drifting', lat=?, lon=?, beached_at=NULL, launched_at=?, simulated_to=?
-       WHERE id = ? AND status = 'beached'`
-    ).bind(snap.lat, snap.lon, t, day, b.id),
-    // 第2-4条：仅当本次 UPDATE 抢占成功（launched_at 等于我们的 t）才会插到行
+    // 第1条：原子抢占。token 唯一，条件插入：仅 status='beached' 时成功，取代 UPDATE 成为抢占哨兵
     c.env.DB.prepare(
       `INSERT INTO tokens (token, bottle_id, role, created_at)
-       SELECT ?, id, 'picker', ? FROM bottles WHERE id = ? AND launched_at = ?`
-    ).bind(token, t, b.id, t),
+       SELECT ?, id, 'picker', ? FROM bottles WHERE id = ? AND status = 'beached'`
+    ).bind(token, t, b.id),
+    // 第2-4条：gate 在"我的 token 已存在"——输家 token 未插入，EXISTS 为假，全部 no-op
+    c.env.DB.prepare(
+      `UPDATE bottles SET status='drifting', lat=?, lon=?, beached_at=NULL, launched_at=?, simulated_to=?
+       WHERE id = ? AND EXISTS (SELECT 1 FROM tokens WHERE token = ?)`
+    ).bind(snap.lat, snap.lon, t, day, b.id, token),
     c.env.DB.prepare(
       `INSERT INTO messages (bottle_id, content, lat, lon, created_at)
-       SELECT id, ?, ?, ?, ? FROM bottles WHERE id = ? AND launched_at = ?`
-    ).bind((content as string).trim(), snap.lat, snap.lon, t, b.id, t),
+       SELECT id, ?, ?, ?, ? FROM bottles WHERE id = ? AND EXISTS (SELECT 1 FROM tokens WHERE token = ?)`
+    ).bind((content as string).trim(), snap.lat, snap.lon, t, b.id, token),
     c.env.DB.prepare(
       `INSERT INTO track_points (bottle_id, ts, lat, lon)
-       SELECT id, ?, ?, ? FROM bottles WHERE id = ? AND launched_at = ?`
-    ).bind(t, snap.lat, snap.lon, b.id, t),
+       SELECT id, ?, ?, ? FROM bottles WHERE id = ? AND EXISTS (SELECT 1 FROM tokens WHERE token = ?)`
+    ).bind(t, snap.lat, snap.lon, b.id, token),
   ]);
-  // batch 是单事务；抢占失败时第1条 changes=0 且哨兵不匹配、子表零插入
-  // 分工：findBeachedNearby 前置检查管顺序滞后请求，此哨兵管真·同瞬并发竞争
-  if ((results[0].meta as { changes?: number }).changes === 0)
+  // batch 是单事务；抢占判定看第1条 changes：token 唯一，输家 INSERT 不满足 status='beached' → changes=0
+  // 分工：findBeachedNearby 前置检查管顺序滞后请求，token 条件插入管真·同瞬并发竞争
+  if ((results[0].meta.changes ?? 0) === 0)
     return err(c, 409, "already_picked", "这只瓶子刚被别人捡走了");
   return c.json({ token });
 });
