@@ -1,6 +1,20 @@
 const test = require("node:test");
 const assert = require("node:assert");
-const { t, tf, tError, resolveLang, SUPPORTED, I18N } = require("../public/i18n.js");
+const fs = require("node:fs");
+const path = require("node:path");
+const Module = require("node:module");
+
+// i18n.js 是浏览器经典脚本（无 ESM export），但本工程 package.json 为 "type":"module"，
+// 会让 Node 把 .js 当 ESM 解析，从而忽略文件末尾的 CommonJS 尾巴。
+// 这里把源码读进来、在 CommonJS 模块沙箱里求值——等价于浏览器 <script> 的加载方式，
+// 触发末尾 module.exports，拿到导出。
+const i18nPath = path.join(__dirname, "..", "public", "i18n.js");
+const i18nSource = fs.readFileSync(i18nPath, "utf8");
+const i18nModule = new Module(i18nPath, module);
+i18nModule.filename = i18nPath;
+i18nModule.paths = Module._nodeModulePaths(path.dirname(i18nPath));
+i18nModule._compile(i18nSource, i18nPath);
+const { t, tf, tError, resolveLang, SUPPORTED, I18N } = i18nModule.exports;
 
 test("SUPPORTED 是 zh/en", () => {
   assert.deepStrictEqual(SUPPORTED, ["zh", "en"]);

@@ -1,4 +1,4 @@
-// 漂流瓶界面多语言。浏览器 <script src> 全局加载；Node 可 import/require（末尾 CommonJS 导出）。
+// 漂流瓶界面多语言。浏览器 <script src> 全局加载；Node 可 require（末尾 CommonJS 导出）。
 const SUPPORTED = ["zh", "en"];
 
 const I18N = {
@@ -179,11 +179,6 @@ function initI18n() {
 
 if (typeof document !== "undefined") initI18n();
 
-// ESM and CommonJS compatibility
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { I18N, t, tf, tError, resolveLang, SUPPORTED };
 }
-
-// ESM default export
-export { I18N, t, tf, tError, resolveLang, SUPPORTED, getLang, setLang, applyI18n, initI18n };
-export default { I18N, t, tf, tError, resolveLang, SUPPORTED, getLang, setLang, applyI18n, initI18n };
