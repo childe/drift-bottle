@@ -26,3 +26,6 @@ textarea { width: 100%; box-sizing: border-box; height: 120px; padding: 8px; fon
 .token-link { word-break: break-all; background: #f0f7ff; padding: 8px; border-radius: 8px;
   display: block; margin: 8px 0; }
 h3 { font-size: 16px; margin: 14px 0 6px; }
+#langSwitch { text-align: right; font-size: 13px; color: #999; margin-bottom: 4px; }
+#langSwitch [data-lang-btn] { cursor: pointer; padding: 0 2px; }
+#langSwitch [data-lang-btn].active { color: #1668dc; font-weight: 700; }

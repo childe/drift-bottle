@@ -6,6 +6,7 @@
   "main": "src/index.ts",
   "scripts": {
     "test": "vitest run",
+    "test:i18n": "node --test test/i18n.node.test.cjs",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
   },

@@ -27,11 +27,11 @@ function validContent(content: unknown): content is string {
 
 /** 审核 + 通过校验的公共前置。返回 Response 表示已出错。 */
 async function checkSubmission(c: C, content: unknown, lat: unknown, lon: unknown) {
-  if (!validContent(content)) return err(c, 400, "bad_content", "内容不能为空且不超过500字");
-  if (!validCoords(lat, lon)) return err(c, 400, "bad_coords", "坐标不合法");
+  if (!validContent(content)) return err(c, 400, "bad_content", "Content must be 1-500 characters");
+  if (!validCoords(lat, lon)) return err(c, 400, "bad_coords", "Invalid coordinates");
   const mod = await moderate(c.env.AI, content as string);
-  if (mod === "unavailable") return err(c, 503, "moderation_unavailable", "审核服务暂不可用，请稍后再试");
-  if (mod === "unsafe") return err(c, 422, "rejected", "内容未通过审核");
+  if (mod === "unavailable") return err(c, 503, "moderation_unavailable", "Moderation service unavailable, please try again later");
+  if (mod === "unsafe") return err(c, 422, "rejected", "Content did not pass moderation");
   return null;
 }
 
@@ -42,7 +42,7 @@ app.post("/api/bottles", async (c) => {
   if (bad) return bad;
   const mask = await getMask(c.env);
   const snap = mask.snapToOcean(lat as number, lon as number);
-  if (!snap) return err(c, 400, "no_ocean", "找不到可投放的海域");
+  if (!snap) return err(c, 400, "no_ocean", "No launchable ocean found");
   const t = now();
   const day = t.slice(0, 10);
   const token = newToken();
@@ -73,7 +73,7 @@ app.get("/api/track/:token", async (c) => {
   const row = await c.env.DB.prepare(
     `SELECT b.* FROM tokens t JOIN bottles b ON b.id = t.bottle_id WHERE t.token = ?`
   ).bind(c.req.param("token")).first();
-  if (!row) return err(c, 404, "not_found", "瓶子不存在");
+  if (!row) return err(c, 404, "not_found", "Bottle not found");
   const msgs = await c.env.DB.prepare(
     `SELECT content, lat, lon, created_at FROM messages WHERE bottle_id = ? ORDER BY id`
   ).bind(row.id).all();
@@ -94,7 +94,7 @@ app.get("/api/track/:token", async (c) => {
 app.get("/api/nearby", async (c) => {
   const lat = Number(c.req.query("lat"));
   const lon = Number(c.req.query("lon"));
-  if (!validCoords(lat, lon)) return err(c, 400, "bad_coords", "坐标不合法");
+  if (!validCoords(lat, lon)) return err(c, 400, "bad_coords", "Invalid coordinates");
   const box = bboxAround(lat, lon, PICKUP_RADIUS_KM);
   const rows = await c.env.DB.prepare(
     `SELECT public_id, lat, lon, beached_at, distance_km, created_at
@@ -116,15 +116,15 @@ app.get("/api/nearby", async (c) => {
 
 /** 找到搁浅瓶并做距离校验；返回 Response 表示已出错。 */
 async function findBeachedNearby(c: C, publicId: string, lat: unknown, lon: unknown) {
-  if (!validCoords(lat, lon)) return err(c, 400, "bad_coords", "坐标不合法");
+  if (!validCoords(lat, lon)) return err(c, 400, "bad_coords", "Invalid coordinates");
   const b = await c.env.DB.prepare(
     `SELECT id, status, lat, lon FROM bottles WHERE public_id = ?`
   ).bind(publicId).first();
-  if (!b) return err(c, 404, "not_found", "这里没有这只瓶子");
+  if (!b) return err(c, 404, "not_found", "No such bottle here");
   // public_id 只经由 nearby（仅列出 beached 瓶）泄露，非 beached 必然是刚被捡走重新入海
-  if (b.status !== "beached") return err(c, 409, "already_picked", "这只瓶子刚被别人捡走了");
+  if (b.status !== "beached") return err(c, 409, "already_picked", "This bottle was just picked up by someone else");
   if (haversineKm(lat as number, lon as number, b.lat as number, b.lon as number) > PICKUP_RADIUS_KM)
-    return err(c, 403, "too_far", "你离这只瓶子太远了");
+    return err(c, 403, "too_far", "You are too far from this bottle");
   return b as { id: number; lat: number; lon: number };
 }
 
@@ -147,7 +147,7 @@ app.post("/api/bottles/:publicId/pickup", async (c) => {
   if (bad) return bad;
   const mask = await getMask(c.env);
   const snap = mask.snapToOcean(b.lat, b.lon); // 从搁浅点回海
-  if (!snap) return err(c, 400, "no_ocean", "附近找不到海域");
+  if (!snap) return err(c, 400, "no_ocean", "No ocean found nearby");
   const t = now();
   const day = t.slice(0, 10);
   const token = newToken();
@@ -174,7 +174,7 @@ app.post("/api/bottles/:publicId/pickup", async (c) => {
   // batch 是单事务；抢占判定看第1条 changes：token 唯一，输家 INSERT 不满足 status='beached' → changes=0
   // 分工：findBeachedNearby 前置检查管顺序滞后请求，token 条件插入管真·同瞬并发竞争
   if ((results[0].meta.changes ?? 0) === 0)
-    return err(c, 409, "already_picked", "这只瓶子刚被别人捡走了");
+    return err(c, 409, "already_picked", "This bottle was just picked up by someone else");
   return c.json({ token });
 });
 
