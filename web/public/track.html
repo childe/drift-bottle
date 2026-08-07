@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<title>瓶子去哪儿了 · 漂流瓶</title>
+<title data-i18n="doc_title_track">瓶子去哪儿了 · 漂流瓶</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -11,11 +11,15 @@
 <body>
 <div id="map"></div>
 <div id="panel">
-  <h1>🍾 瓶子去哪儿了</h1>
-  <div id="info">加载中…</div>
+  <div id="langSwitch">
+    <span data-lang-btn="zh">中</span> / <span data-lang-btn="en">EN</span>
+  </div>
+  <h1 data-i18n="track_title">🍾 瓶子去哪儿了</h1>
+  <div id="info" data-i18n="loading">加载中…</div>
   <div id="letters"></div>
-  <p><a href="/">← 回首页</a></p>
+  <p><a href="/" data-i18n="back_home">← 回首页</a></p>
 </div>
+<script src="/i18n.js"></script>
 <script src="/track.js"></script>
 </body>
 </html>
