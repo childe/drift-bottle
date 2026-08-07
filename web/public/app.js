@@ -55,7 +55,16 @@ document.getElementById("dropBtn").onclick = () => {
         <p>入海点距你 ${data.snapped_km} km。收好你的追踪链接（仅此一次，丢了找不回）：</p>
         <a class="token-link" href="${url}">${url}</a>
         <button id="copyLink">复制链接</button>`);
-      document.getElementById("copyLink").addEventListener("click", () => navigator.clipboard.writeText(url));
+      document.getElementById("copyLink").addEventListener("click", async (e) => {
+        try {
+          await navigator.clipboard.writeText(url);
+          const btn = e.currentTarget;
+          btn.textContent = "✓ 已复制";
+          setTimeout(() => { btn.textContent = "复制链接"; }, 1500);
+        } catch {
+          alert("复制失败，请手动选择链接复制");
+        }
+      });
       L.marker([data.position.lat, data.position.lon]).addTo(map).bindPopup("你的瓶子入海点").openPopup();
       map.setView([data.position.lat, data.position.lon], 7);
     } catch (e) { document.getElementById("dropErr").textContent = e.message; }
