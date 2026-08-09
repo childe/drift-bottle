@@ -15,8 +15,42 @@ import numpy as np
 from currents import CurrentField, download_currents
 from d1 import D1Client
 from integrator import DayResult, advance_day
+from ocean_snap import load_safe_mask, snap_to_safe
 
 DATA = pathlib.Path(__file__).parent / "currents_global.nc"
+
+REDRIFT_DAYS = 7
+
+
+def refloat_beached(d1, now: datetime, mask) -> int:
+    """把搁浅满 REDRIFT_DAYS 天的瓶子吸附回开阔海格，重新 drifting。返回重漂数量。
+
+    时刻统一 Z 结尾，保证 ISO 字符串字典序=时间序。吸附跳跃不计入里程。
+    """
+    cutoff = (now - timedelta(days=REDRIFT_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    today = now.date().isoformat()
+    rows = d1.query(
+        "SELECT id, lat, lon FROM bottles "
+        "WHERE status='beached' AND beached_at IS NOT NULL "
+        f"AND beached_at <= '{cutoff}'"
+    )
+    if not rows:
+        return 0
+    stmts = []
+    for b in rows:
+        snapped = snap_to_safe(mask, float(b["lat"]), float(b["lon"]))
+        if snapped is None:
+            continue  # 理论上不会：全球总能找到海格
+        slat, slon = snapped
+        stmts.append(
+            f"UPDATE bottles SET status='drifting', beached_at=NULL, "
+            f"lat={slat:.5f}, lon={slon:.5f}, "
+            f"launched_at='{today}T00:00:00Z', simulated_to='{today}' "
+            f"WHERE id={int(b['id'])} AND status='beached'"
+        )
+    if stmts:
+        d1.query(";\n".join(stmts))
+    return len(stmts)
 
 
 def writeback_sql(day: date, bottles: list[dict], result: DayResult) -> str:
@@ -95,6 +129,12 @@ def main() -> None:
         os.environ["CLOUDFLARE_D1_DATABASE_ID"],
         os.environ["CLOUDFLARE_API_TOKEN"],
     )
+    now = datetime.now(timezone.utc)
+    mask = load_safe_mask()
+    refloated = refloat_beached(d1, now, mask)
+    if refloated:
+        print(f"[advance] 重漂 {refloated} 只搁浅满 {REDRIFT_DAYS} 天的瓶子")
+
     rows = d1.query(
         "SELECT MIN(simulated_to) AS m FROM bottles WHERE status = 'drifting'"
     )
@@ -102,7 +142,7 @@ def main() -> None:
         print("[advance] 没有漂流中的瓶子，退出")
         return
     start = date.fromisoformat(rows[0]["m"]) + timedelta(days=1)
-    end = datetime.now(timezone.utc).date()
+    end = now.date()
     if start > end:
         print("[advance] 已是最新，退出")
         return
