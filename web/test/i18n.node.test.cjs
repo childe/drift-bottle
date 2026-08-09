@@ -14,7 +14,7 @@ const i18nModule = new Module(i18nPath, module);
 i18nModule.filename = i18nPath;
 i18nModule.paths = Module._nodeModulePaths(path.dirname(i18nPath));
 i18nModule._compile(i18nSource, i18nPath);
-const { t, tf, tError, resolveLang, SUPPORTED, I18N } = i18nModule.exports;
+const { t, tf, tError, resolveLang, SUPPORTED, I18N, redriftDaysLeft, REDRIFT_DAYS } = i18nModule.exports;
 
 test("SUPPORTED 是 zh/en", () => {
   assert.deepStrictEqual(SUPPORTED, ["zh", "en"]);
@@ -60,4 +60,22 @@ test("每个 zh key 都有对应 en key（完整性）", () => {
   const zhKeys = Object.keys(I18N.zh).sort();
   const enKeys = Object.keys(I18N.en).sort();
   assert.deepStrictEqual(zhKeys, enKeys);
+});
+
+test("REDRIFT_DAYS 为 7", () => {
+  assert.strictEqual(REDRIFT_DAYS, 7);
+});
+
+test("redriftDaysLeft: 刚搁浅=7, 满7天=0, 超过=0, 3.5天=4", () => {
+  const t0 = Date.parse("2026-08-01T00:00:00Z");
+  assert.strictEqual(redriftDaysLeft("2026-08-01T00:00:00Z", t0), 7);
+  assert.strictEqual(redriftDaysLeft("2026-08-01T00:00:00Z", t0 + 7 * 86400000), 0);
+  assert.strictEqual(redriftDaysLeft("2026-08-01T00:00:00Z", t0 + 9 * 86400000), 0);
+  assert.strictEqual(redriftDaysLeft("2026-08-01T00:00:00Z", t0 + 3.5 * 86400000), 4);
+});
+
+test("新增 status_beached_soon / redrift_soon 有 zh/en", () => {
+  for (const k of ["status_beached_soon", "redrift_countdown", "redrift_soon"]) {
+    assert.ok(I18N.zh[k] !== undefined && I18N.en[k] !== undefined, k);
+  }
 });

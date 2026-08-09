@@ -40,7 +40,10 @@ const I18N = {
     loading: "加载中…",
     back_home: "← 回首页",
     track_not_found: "没有找到这只瓶子。链接是否完整？",
-    status_beached: "🏝️ 已搁浅，等待有缘人",
+    status_beached: "🏝️ 已搁浅，{n} 天后随潮水再漂",
+    status_beached_soon: "🏝️ 即将随潮水再漂",
+    redrift_countdown: "· {n} 天后再漂",
+    redrift_soon: "· 即将再漂",
     status_drifting: "🌊 正在漂流",
     track_status: "状态：{s}",
     track_start: "启程：{date}（{days} 天前）",
@@ -97,7 +100,10 @@ const I18N = {
     loading: "Loading…",
     back_home: "← Back to home",
     track_not_found: "Bottle not found. Is the link complete?",
-    status_beached: "🏝️ Beached, awaiting a finder",
+    status_beached: "🏝️ Beached, re-drifts in {n} days",
+    status_beached_soon: "🏝️ Beached, about to re-drift",
+    redrift_countdown: "· re-drifts in {n}d",
+    redrift_soon: "· re-drifting soon",
     status_drifting: "🌊 Drifting",
     track_status: "Status: {s}",
     track_start: "Set off: {date} ({days} days ago)",
@@ -134,6 +140,13 @@ function tf(key, lang, params) {
 function tError(code, fallback, lang) {
   if (code && I18N.en["err_" + code] !== undefined) return t("err_" + code, lang);
   return fallback;
+}
+
+const REDRIFT_DAYS = 7;
+
+function redriftDaysLeft(beachedAtIso, nowMs) {
+  const elapsed = (nowMs - Date.parse(beachedAtIso)) / 86400000;
+  return Math.max(0, Math.ceil(REDRIFT_DAYS - elapsed));
 }
 
 function resolveLang(stored, navLang) {
@@ -180,5 +193,5 @@ function initI18n() {
 if (typeof document !== "undefined") initI18n();
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { I18N, t, tf, tError, resolveLang, SUPPORTED };
+  module.exports = { I18N, t, tf, tError, resolveLang, SUPPORTED, REDRIFT_DAYS, redriftDaysLeft };
 }
