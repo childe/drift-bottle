@@ -123,7 +123,11 @@ async function loadNearby() {
       const item = document.createElement("div");
       item.className = "bottle-item";
       item.innerHTML = `${tf("nearby_item", getLang(), { days: b.days_at_sea, km: Math.round(b.distance_km) })}
-        <button class="secondary" style="margin-top:6px">${t("read_pick_btn", getLang())}</button>`;
+  ${(() => {
+    const n = redriftDaysLeft(b.beached_at, Date.now());
+    return n > 0 ? tf("redrift_countdown", getLang(), { n }) : t("redrift_soon", getLang());
+  })()}
+  <button class="secondary" style="margin-top:6px">${t("read_pick_btn", getLang())}</button>`;
       item.querySelector("button").onclick = () => openBottle(b);
       el.appendChild(item);
       L.marker([b.lat, b.lon]).addTo(nearbyLayer)

@@ -14,7 +14,13 @@ function escapeHtml(s) {
 function renderInfoAndLetters(d) {
   const L_ = getLang();
   const days = Math.max(0, (Date.now() - Date.parse(d.created_at)) / 86400e3);
-  const statusText = d.status === "beached" ? t("status_beached", L_) : t("status_drifting", L_);
+  let statusText;
+  if (d.status === "beached") {
+    const n = redriftDaysLeft(d.beached_at, Date.now());
+    statusText = n > 0 ? tf("status_beached", L_, { n }) : t("status_beached_soon", L_);
+  } else {
+    statusText = t("status_drifting", L_);
+  }
   info.innerHTML = `
     <p>${tf("track_status", L_, { s: statusText })}<br>
     ${tf("track_start", L_, { date: escapeHtml(d.created_at.slice(0, 10)), days: days.toFixed(0) })}<br>
