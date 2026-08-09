@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from advance import refloat_beached, REDRIFT_DAYS
 from ocean_snap import load_safe_mask
@@ -59,5 +60,15 @@ def test_refloat_none_when_no_beached():
     mask = load_safe_mask()
     d1 = FakeD1([])  # SELECT 无满足条件的搁浅瓶
     n = refloat_beached(d1, datetime(2026, 8, 9, tzinfo=timezone.utc), mask)
+    assert n == 0
+    assert not any(s.strip().startswith("UPDATE") for s in d1.executed)
+
+
+def test_refloat_skips_when_snap_returns_none():
+    mask = load_safe_mask()
+    now = datetime(2026, 8, 9, tzinfo=timezone.utc)
+    d1 = FakeD1([{"id": 3, "lat": 31.0, "lon": 122.0}])
+    with patch("advance.snap_to_safe", return_value=None):
+        n = refloat_beached(d1, now, mask)
     assert n == 0
     assert not any(s.strip().startswith("UPDATE") for s in d1.executed)
