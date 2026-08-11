@@ -2,6 +2,13 @@ name = "drift-bottle"
 main = "src/index.ts"
 compatibility_date = "2026-08-01"
 
+workers_dev = true
+
+routes = [
+  { pattern = "driftbottle.love", custom_domain = true },
+  { pattern = "www.driftbottle.love", custom_domain = true },
+]
+
 [assets]
 directory = "public"
 binding = "ASSETS"
