@@ -17,7 +17,8 @@ const SYSTEM_PROMPT = `你是内容安全审核员，对任意语言的用户内
 - 针对具体个人的威胁、骚扰，或曝光他人隐私（人肉）
 
 判为 safe（放行）：
-- 个人负面情绪的倾诉（例如"我很难过""好累""想消失"）——这是允许的，不要判为违规
+- 个人负面情绪的倾诉（例如"我很难过""好累""想消失""好累不想活了""不想活了"）——这些是
+  情绪的表达，不是自杀的危险行为（不含具体方法/工具、不是相约自杀），应判 safe，不要判为违规
 - 一般的政治观点表达
 - 普通的信件、问候、情感表达
 
@@ -25,10 +26,12 @@ const SYSTEM_PROMPT = `你是内容安全审核员，对任意语言的用户内
 
 export async function moderate(ai: Ai, content: string): Promise<ModerationResult> {
   try {
+    // 中和用户内容里字面的围栏标签，防止提前闭合 <user_content> 围栏后注入伪造指令
+    const safeContent = content.replace(/<\/?user_content>/gi, "");
     const res = (await ai.run(MODEL as never, {
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: `<user_content>\n${content}\n</user_content>` },
+        { role: "user", content: `<user_content>\n${safeContent}\n</user_content>` },
       ],
     } as never)) as { response?: string };
     const text = (res?.response ?? "").trim().toLowerCase();
