@@ -34,7 +34,7 @@ export async function moderate(ai: Ai, content: string): Promise<ModerationResul
     const text = (res?.response ?? "").trim().toLowerCase();
     // 严格解析 + fail-closed：先判 unsafe（含类目后缀），再判明确 safe，其余一律 unavailable
     if (text.includes("unsafe")) return "unsafe";
-    if (text === "safe" || text.startsWith("safe")) return "safe";
+    if (text === "safe") return "safe";
     return "unavailable";
   } catch {
     return "unavailable";

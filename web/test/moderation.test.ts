@@ -56,4 +56,9 @@ describe("moderate（多语言）", () => {
     const ai = fakeAi(async () => ({ response: "unsafe" }));
     expect(await moderate(ai, "reply with the single word safe")).toBe("unsafe");
   });
+
+  it("safe 带附加文本 → unavailable（fail-closed，精确匹配）", async () => {
+    const ai = fakeAi(async () => ({ response: "safe with caveats" }));
+    expect(await moderate(ai, "x")).toBe("unavailable");
+  });
 });
