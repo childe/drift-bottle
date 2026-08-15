@@ -8,13 +8,6 @@ routes = [
   { pattern = "www.driftbottle.love", custom_domain = true },
 ]
 
-workers_dev = true
-
-routes = [
-  { pattern = "driftbottle.love", custom_domain = true },
-  { pattern = "www.driftbottle.love", custom_domain = true },
-]
-
 [assets]
 directory = "public"
 binding = "ASSETS"
