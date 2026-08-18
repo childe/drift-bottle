@@ -182,3 +182,84 @@ def render_default_card() -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
+
+
+import os
+from datetime import date, datetime, timezone
+
+from d1 import D1Client
+from ocean_snap import load_safe_mask
+
+
+def fetch_active_bottles(d1):
+    return d1.query(
+        "SELECT id, public_id, status, distance_km, created_at, lang "
+        "FROM bottles WHERE status IN ('drifting','beached')"
+    )
+
+
+def fetch_track(d1, bottle_id):
+    rows = d1.query(
+        "SELECT lat, lon FROM track_points WHERE bottle_id = ? ORDER BY ts ASC",
+        [bottle_id],
+    )
+    return [(float(r["lat"]), float(r["lon"])) for r in rows]
+
+
+def days_since(created_at, today):
+    d0 = date.fromisoformat(created_at[:10])
+    return max(0, (today - d0).days)
+
+
+def make_r2_client():
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client(
+        "s3",
+        endpoint_url=os.environ["R2_ENDPOINT"],
+        aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+        config=Config(signature_version="s3v4", region_name="auto"),
+    )
+
+
+def upload_card(s3, bucket, public_id, png):
+    s3.put_object(
+        Bucket=bucket, Key=f"og/{public_id}.png", Body=png, ContentType="image/png"
+    )
+
+
+def render_and_upload_all(d1, s3, bucket, mask, today) -> int:
+    bottles = fetch_active_bottles(d1)
+    ok = 0
+    for b in bottles:
+        try:
+            track = fetch_track(d1, int(b["id"]))
+            days = days_since(b["created_at"], today)
+            png = render_card(
+                track, float(b["distance_km"]), days, b["status"], b["lang"], mask
+            )
+            upload_card(s3, bucket, b["public_id"], png)
+            ok += 1
+        except Exception as e:  # 单瓶失败不拖垮整批
+            print(f"[og_card] 瓶 {b.get('public_id')} 渲染/上传失败: {e}")
+    print(f"[og_card] 完成 {ok}/{len(bottles)}")
+    return ok
+
+
+def main():
+    d1 = D1Client(
+        os.environ["CLOUDFLARE_ACCOUNT_ID"],
+        os.environ["CLOUDFLARE_D1_DATABASE_ID"],
+        os.environ["CLOUDFLARE_API_TOKEN"],
+    )
+    s3 = make_r2_client()
+    bucket = os.environ["R2_BUCKET"]
+    mask = load_safe_mask()
+    today = datetime.now(timezone.utc).date()
+    render_and_upload_all(d1, s3, bucket, mask, today)
+
+
+if __name__ == "__main__":
+    main()
