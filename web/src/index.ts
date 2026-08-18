@@ -4,6 +4,7 @@ import { newToken, newPublicId } from "./ids";
 import { haversineKm, bboxAround } from "./geo";
 import { getMask } from "./ocean";
 import { moderate } from "./moderation";
+import { ogMetaTags, injectHead } from "./og";
 
 export type Env = { DB: D1Database; AI: Ai; ASSETS: Fetcher };
 
@@ -179,7 +180,40 @@ app.post("/api/bottles/:publicId/pickup", async (c) => {
   return c.json({ token });
 });
 
-// 追踪页：/b/<token> 由前端 track.html 渲染
-app.get("/b/*", (c) => c.env.ASSETS.fetch(new Request(new URL("/track.html", c.req.url))));
+// 追踪页：/b/<token> 动态注入 per-bottle OG 预览卡 meta；查不到/异常回代纯页面（fail-open）
+app.get("/b/*", async (c) => {
+  const plain = () => c.env.ASSETS.fetch(new Request(new URL("/track.html", c.req.url)));
+  const token = c.req.path.replace(/^\/b\//, "").split("/")[0];
+  if (!token) return plain();
+  let row: Record<string, unknown> | null = null;
+  try {
+    row = await c.env.DB.prepare(
+      `SELECT b.public_id AS publicId, b.status, b.distance_km AS distanceKm,
+              b.created_at AS createdAt, b.lang AS lang
+       FROM tokens t JOIN bottles b ON b.id = t.bottle_id WHERE t.token = ?`
+    ).bind(token).first();
+  } catch {
+    row = null;
+  }
+  if (!row) return plain();
+  const html = await (await plain()).text();
+  const origin = new URL(c.req.url).origin;
+  const days = Math.max(
+    0,
+    Math.floor((Date.now() - Date.parse(String(row.createdAt))) / 86400000)
+  );
+  const dayStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const tags = ogMetaTags({
+    origin,
+    publicId: String(row.publicId),
+    lang: row.lang === "zh" ? "zh" : "en",
+    days,
+    distanceKm: Number(row.distanceKm) || 0,
+    status: String(row.status),
+    canonicalUrl: `${origin}/b/${token}`,
+    dayStamp,
+  });
+  return c.html(injectHead(html, tags));
+});
 
 export default app;
