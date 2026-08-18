@@ -7,6 +7,7 @@ declare namespace Cloudflare {
     TEST_MIGRATIONS: import("@cloudflare/vitest-pool-workers").D1Migration[];
     AI: Ai;
     ASSETS: Fetcher;
+    OG: R2Bucket;
   }
 }
 

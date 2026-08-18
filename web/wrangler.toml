@@ -11,7 +11,7 @@ routes = [
 [assets]
 directory = "public"
 binding = "ASSETS"
-run_worker_first = ["/api/*", "/b/*"]
+run_worker_first = ["/api/*", "/b/*", "/og/*"]
 
 [[d1_databases]]
 binding = "DB"
@@ -20,3 +20,7 @@ database_id = "39bf1672-7064-49d8-95ea-79e4f396b6b2"
 
 [ai]
 binding = "AI"
+
+[[r2_buckets]]
+binding = "OG"
+bucket_name = "drift-bottle-og"

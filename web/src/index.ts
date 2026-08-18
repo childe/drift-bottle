@@ -6,7 +6,7 @@ import { getMask } from "./ocean";
 import { moderate } from "./moderation";
 import { ogMetaTags, injectHead } from "./og";
 
-export type Env = { DB: D1Database; AI: Ai; ASSETS: Fetcher };
+export type Env = { DB: D1Database; AI: Ai; ASSETS: Fetcher; OG: R2Bucket };
 
 const app = new Hono<{ Bindings: Env }>();
 const PICKUP_RADIUS_KM = 30;
@@ -214,6 +214,23 @@ app.get("/b/*", async (c) => {
     dayStamp,
   });
   return c.html(injectHead(html, tags));
+});
+
+// OG 图：从 R2 读 og/{public_id}.png，缺失/异常回退默认卡（fail-open）
+app.get("/og/:file", async (c) => {
+  const fallback = () => c.env.ASSETS.fetch(new Request(new URL("/og-default.png", c.req.url)));
+  const m = c.req.param("file").match(/^([A-Za-z0-9]{12})\.png$/);
+  if (!m) return fallback();
+  let obj: R2ObjectBody | null = null;
+  try {
+    obj = await c.env.OG.get(`og/${m[1]}.png`);
+  } catch {
+    obj = null;
+  }
+  if (!obj) return fallback();
+  return new Response(obj.body, {
+    headers: { "content-type": "image/png", "cache-control": "public, max-age=3600" },
+  });
 });
 
 export default app;
