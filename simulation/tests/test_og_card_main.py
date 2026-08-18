@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import datetime, timezone
 
 import og_card
 
@@ -36,7 +36,12 @@ def _bottle(id, pid, status="drifting", dist=100, created="2026-08-01", lang="en
 
 
 def test_days_since():
-    assert og_card.days_since("2026-08-01T00:00:00Z", date(2026, 8, 18)) == 17
+    assert (
+        og_card.days_since(
+            "2026-08-01T00:00:00Z", datetime(2026, 8, 18, 0, 0, 0, tzinfo=timezone.utc)
+        )
+        == 17
+    )
 
 
 def test_uploads_each_bottle_with_correct_key():
@@ -50,7 +55,11 @@ def test_uploads_each_bottle_with_correct_key():
     }
     s3 = FakeS3()
     n = og_card.render_and_upload_all(
-        FakeD1(bottles, tracks), s3, "bk", None, date(2026, 8, 18)
+        FakeD1(bottles, tracks),
+        s3,
+        "bk",
+        None,
+        datetime(2026, 8, 18, tzinfo=timezone.utc),
     )
     assert n == 2
     assert sorted(k["Key"] for k in s3.puts) == [
@@ -69,7 +78,11 @@ def test_one_bottle_failure_does_not_abort_batch():
     tracks = {1: [{"lat": 0, "lon": 0}], 2: [{"lat": 0, "lon": 0}]}
     s3 = FakeS3()
     n = og_card.render_and_upload_all(
-        FakeD1(bottles, tracks), s3, "bk", None, date(2026, 8, 18)
+        FakeD1(bottles, tracks),
+        s3,
+        "bk",
+        None,
+        datetime(2026, 8, 18, tzinfo=timezone.utc),
     )
     assert n == 1
     assert [k["Key"] for k in s3.puts] == ["og/good11111111.png"]

@@ -185,7 +185,7 @@ def render_default_card() -> bytes:
 
 
 import os
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 from d1 import D1Client
 from ocean_snap import load_safe_mask
@@ -206,9 +206,13 @@ def fetch_track(d1, bottle_id):
     return [(float(r["lat"]), float(r["lon"])) for r in rows]
 
 
-def days_since(created_at, today):
-    d0 = date.fromisoformat(created_at[:10])
-    return max(0, (today - d0).days)
+def days_since(created_at, now):
+    """瓶子诞生至今的整天数（floor of elapsed，非负），口径对齐 Worker /b。now 为 tz-aware UTC datetime。"""
+    s = created_at.strip().replace("Z", "+00:00")
+    created = datetime.fromisoformat(s)
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return max(0, (now - created).days)
 
 
 def make_r2_client():
@@ -230,13 +234,13 @@ def upload_card(s3, bucket, public_id, png):
     )
 
 
-def render_and_upload_all(d1, s3, bucket, mask, today) -> int:
+def render_and_upload_all(d1, s3, bucket, mask, now) -> int:
     bottles = fetch_active_bottles(d1)
     ok = 0
     for b in bottles:
         try:
             track = fetch_track(d1, int(b["id"]))
-            days = days_since(b["created_at"], today)
+            days = days_since(b["created_at"], now)
             png = render_card(
                 track, float(b["distance_km"]), days, b["status"], b["lang"], mask
             )
@@ -257,8 +261,8 @@ def main():
     s3 = make_r2_client()
     bucket = os.environ["R2_BUCKET"]
     mask = load_safe_mask()
-    today = datetime.now(timezone.utc).date()
-    render_and_upload_all(d1, s3, bucket, mask, today)
+    now = datetime.now(timezone.utc)
+    render_and_upload_all(d1, s3, bucket, mask, now)
 
 
 if __name__ == "__main__":
