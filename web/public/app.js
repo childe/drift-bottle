@@ -116,7 +116,7 @@ async function loadNearby() {
   nearbyLayer.clearLayers();
   const el = document.getElementById("nearby");
   try {
-    const { bottles } = await api(`/api/nearby?lat=${userPos.lat}&lon=${userPos.lon}`);
+    const { bottles, drifting = [] } = await api(`/api/nearby?lat=${userPos.lat}&lon=${userPos.lon}`);
     el.innerHTML = `<h3>${tf("nearby_title", getLang(), { n: bottles.length })}</h3>` + (bottles.length === 0
       ? `<p class="hint">${t("nearby_empty", getLang())}</p>` : "");
     for (const b of bottles) {
@@ -133,6 +133,20 @@ async function loadNearby() {
       L.marker([b.lat, b.lon]).addTo(nearbyLayer)
         .bindPopup(tf("nearby_popup", getLang(), { days: b.days_at_sea }))
         .on("click", () => openBottle(b));
+    }
+    // 漂流中的瓶子：地图上以圆点显示，只看不可捡（无捡拾按钮、不进列表）
+    for (const d of drifting) {
+      L.circleMarker([d.lat, d.lon], {
+        radius: 6, color: "#4fc3f7", weight: 2, fillColor: "#4fc3f7", fillOpacity: 0.6,
+      }).addTo(nearbyLayer).bindPopup(
+        tf("drifting_popup", getLang(), { days: d.days_at_sea, km: Math.round(d.distance_km) })
+      );
+    }
+    if (drifting.length) {
+      const note = document.createElement("p");
+      note.className = "hint";
+      note.textContent = tf("drifting_note", getLang(), { n: drifting.length });
+      el.appendChild(note);
     }
   } catch (e) { el.innerHTML = `<p class="error">${e.message}</p>`; }
 }

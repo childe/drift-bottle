@@ -10,6 +10,8 @@ export type Env = { DB: D1Database; AI: Ai; ASSETS: Fetcher; OG: R2Bucket };
 
 const app = new Hono<{ Bindings: Env }>();
 const PICKUP_RADIUS_KM = 30;
+// 漂流中的瓶子只看不可捡，用更大的可视半径（瓶子漂得快，30km 内几小时就出去了）
+const VIEW_RADIUS_KM = 200;
 
 type C = Context<{ Bindings: Env }>;
 const err = (c: C, status: 400 | 403 | 404 | 409 | 422 | 503, code: string, message: string) =>
@@ -113,7 +115,25 @@ app.get("/api/nearby", async (c) => {
       days_at_sea: Math.max(0, Math.round(
         (Date.parse(b.beached_at as string) - Date.parse(b.created_at as string)) / 86400e3)),
     }));
-  return c.json({ bottles });
+
+  // 漂流中的瓶子：更大的可视半径，只看不可捡；不返回 public_id（无交互，也不给追踪把手）
+  const vbox = bboxAround(lat, lon, VIEW_RADIUS_KM);
+  const drows = await c.env.DB.prepare(
+    `SELECT lat, lon, distance_km, created_at
+     FROM bottles WHERE status = 'drifting' AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?`
+  ).bind(vbox.latMin, vbox.latMax, vbox.lonMin, vbox.lonMax).all();
+  const nowMs = Date.now();
+  const drifting = drows.results
+    .filter((b) => haversineKm(lat, lon, b.lat as number, b.lon as number) <= VIEW_RADIUS_KM)
+    .map((b) => ({
+      lat: b.lat,
+      lon: b.lon,
+      distance_km: b.distance_km,
+      days_at_sea: Math.max(0, Math.floor(
+        (nowMs - Date.parse(b.created_at as string)) / 86400e3)),
+    }));
+
+  return c.json({ bottles, drifting });
 });
 
 /** 找到搁浅瓶并做距离校验；返回 Response 表示已出错。 */
