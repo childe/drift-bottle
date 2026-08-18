@@ -109,14 +109,73 @@ function renderMine() {
 }
 renderMine();
 
-// ---- 附近搁浅瓶 ----
-let nearbyLayer = L.layerGroup().addTo(map);
+// ---- 视野内的瓶子（拖动地图浏览整片海）+ 轨迹 ----
+const viewLayer = L.layerGroup().addTo(map); // 视野内所有瓶子（漂流+搁浅）
+const trajLayer = L.layerGroup().addTo(map); // 当前选中瓶子的轨迹
+
+let viewTimer = null;
+function scheduleLoadView() {
+  clearTimeout(viewTimer);
+  viewTimer = setTimeout(loadView, 400); // 防抖：拖动/缩放停下后再加载
+}
+map.on("moveend", scheduleLoadView);
+
+async function loadView() {
+  const b = map.getBounds();
+  const qs = `n=${b.getNorth()}&s=${b.getSouth()}&e=${b.getEast()}&w=${b.getWest()}`;
+  try {
+    const { bottles, truncated } = await api(`/api/bottles/view?${qs}`);
+    viewLayer.clearLayers();
+    for (const bo of bottles) {
+      const marker = bo.status === "beached"
+        ? L.marker([bo.lat, bo.lon])
+        : L.circleMarker([bo.lat, bo.lon],
+            { radius: 6, color: "#4fc3f7", weight: 2, fillColor: "#4fc3f7", fillOpacity: 0.6 });
+      marker.addTo(viewLayer).on("click", () => showTrajectory(bo));
+    }
+    const note = document.getElementById("viewNote");
+    if (note) note.textContent = truncated ? t("view_truncated", getLang()) : "";
+  } catch (e) { /* 视野加载失败不打断主流程 */ }
+}
+
+// 点击瓶子：画出它的漂流轨迹（只看轨迹，不显示信件内容）
+async function showTrajectory(bo) {
+  trajLayer.clearLayers();
+  try {
+    const data = await api(`/api/bottles/${bo.public_id}/trajectory`);
+    const pts = data.track.map((p) => [p.lat, p.lon]);
+    if (pts.length > 1)
+      L.polyline(pts, { color: "#e040fb", weight: 3, opacity: 0.85 }).addTo(trajLayer);
+    if (pts.length) {
+      L.circleMarker(pts[0], { radius: 5, color: "#4fc3f7", fillColor: "#4fc3f7", fillOpacity: 1 })
+        .addTo(trajLayer).bindPopup(t("popup_start", getLang()));
+      L.circleMarker(pts[pts.length - 1],
+        { radius: 6, color: "#e040fb", fillColor: "#e040fb", fillOpacity: 1 }).addTo(trajLayer);
+    }
+    const statusLabel = bo.status === "beached"
+      ? t("status_beached_short", getLang()) : t("status_drifting", getLang());
+    const box = document.createElement("div");
+    box.innerHTML = `<div>${tf("traj_popup", getLang(),
+      { status: statusLabel, days: bo.days_at_sea, km: Math.round(bo.distance_km) })}</div>`;
+    // 搁浅瓶给「读信/捡起」入口；实际能否读由后端按 30km 判定（远则 403）
+    if (bo.status === "beached") {
+      const btn = document.createElement("button");
+      btn.className = "secondary";
+      btn.style.marginTop = "6px";
+      btn.textContent = t("read_pick_btn", getLang());
+      btn.onclick = () => { map.closePopup(); openBottle(bo); };
+      box.appendChild(btn);
+    }
+    L.popup().setLatLng(pts[pts.length - 1] || [bo.lat, bo.lon]).setContent(box).openOn(map);
+  } catch (e) { /* ignore */ }
+}
+
+// ---- 就近可捡的搁浅瓶（可读信+回信）----
 async function loadNearby() {
   if (!userPos) return;
-  nearbyLayer.clearLayers();
   const el = document.getElementById("nearby");
   try {
-    const { bottles, drifting = [] } = await api(`/api/nearby?lat=${userPos.lat}&lon=${userPos.lon}`);
+    const { bottles } = await api(`/api/nearby?lat=${userPos.lat}&lon=${userPos.lon}`);
     el.innerHTML = `<h3>${tf("nearby_title", getLang(), { n: bottles.length })}</h3>` + (bottles.length === 0
       ? `<p class="hint">${t("nearby_empty", getLang())}</p>` : "");
     for (const b of bottles) {
@@ -130,23 +189,6 @@ async function loadNearby() {
   <button class="secondary" style="margin-top:6px">${t("read_pick_btn", getLang())}</button>`;
       item.querySelector("button").onclick = () => openBottle(b);
       el.appendChild(item);
-      L.marker([b.lat, b.lon]).addTo(nearbyLayer)
-        .bindPopup(tf("nearby_popup", getLang(), { days: b.days_at_sea }))
-        .on("click", () => openBottle(b));
-    }
-    // 漂流中的瓶子：地图上以圆点显示，只看不可捡（无捡拾按钮、不进列表）
-    for (const d of drifting) {
-      L.circleMarker([d.lat, d.lon], {
-        radius: 6, color: "#4fc3f7", weight: 2, fillColor: "#4fc3f7", fillOpacity: 0.6,
-      }).addTo(nearbyLayer).bindPopup(
-        tf("drifting_popup", getLang(), { days: d.days_at_sea, km: Math.round(d.distance_km) })
-      );
-    }
-    if (drifting.length) {
-      const note = document.createElement("p");
-      note.className = "hint";
-      note.textContent = tf("drifting_note", getLang(), { n: drifting.length });
-      el.appendChild(note);
     }
   } catch (e) { el.innerHTML = `<p class="error">${e.message}</p>`; }
 }
@@ -179,6 +221,7 @@ async function openBottle(b) {
           <p>${t("pickup_success_body", getLang())}</p>
           <a class="token-link" href="${escapeHtml(url)}">${escapeHtml(url)}</a>`);
         loadNearby();
+        scheduleLoadView(); // 瓶子由搁浅变漂流，刷新地图 marker
       } catch (e) { document.getElementById("pickErr").textContent = e.message; }
     };
   } catch (e) { alert(e.message); }
@@ -198,5 +241,10 @@ window.addEventListener("i18n:changed", () => {
   if (userMarker && userPosLabelKey) userMarker.setPopupContent(t(userPosLabelKey, getLang()));
   renderMine();
   loadNearby();
+  trajLayer.clearLayers(); // 清掉旧语言的轨迹弹窗
+  scheduleLoadView();
   modal.classList.add("hidden"); // 关掉可能开着的弹窗，避免旧语言残留
 });
+
+// 页面载入即按当前视野加载一次（不必等定位）
+scheduleLoadView();

@@ -10,8 +10,7 @@ export type Env = { DB: D1Database; AI: Ai; ASSETS: Fetcher; OG: R2Bucket };
 
 const app = new Hono<{ Bindings: Env }>();
 const PICKUP_RADIUS_KM = 30;
-// 漂流中的瓶子只看不可捡，用更大的可视半径（瓶子漂得快，30km 内几小时就出去了）
-const VIEW_RADIUS_KM = 200;
+const MAX_VIEW_BOTTLES = 500;
 
 type C = Context<{ Bindings: Env }>;
 const err = (c: C, status: 400 | 403 | 404 | 409 | 422 | 503, code: string, message: string) =>
@@ -115,25 +114,51 @@ app.get("/api/nearby", async (c) => {
       days_at_sea: Math.max(0, Math.round(
         (Date.parse(b.beached_at as string) - Date.parse(b.created_at as string)) / 86400e3)),
     }));
+  return c.json({ bottles });
+});
 
-  // 漂流中的瓶子：更大的可视半径，只看不可捡；不返回 public_id（无交互，也不给追踪把手）
-  const vbox = bboxAround(lat, lon, VIEW_RADIUS_KM);
-  const drows = await c.env.DB.prepare(
-    `SELECT lat, lon, distance_km, created_at
-     FROM bottles WHERE status = 'drifting' AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?`
-  ).bind(vbox.latMin, vbox.latMax, vbox.lonMin, vbox.lonMax).all();
+// 视野内的瓶子（拖动地图浏览整片海）：漂流+搁浅都返回，仅用于展示/画轨迹，不含内容
+app.get("/api/bottles/view", async (c) => {
+  const n = Number(c.req.query("n"));
+  const s = Number(c.req.query("s"));
+  const e = Number(c.req.query("e"));
+  const w = Number(c.req.query("w"));
+  if (![n, s, e, w].every((v) => Number.isFinite(v)) || s > n)
+    return err(c, 400, "bad_bounds", "Invalid bounds");
+  // 经度可能跨反经线（w>e）：普通区间用 BETWEEN，跨越时用 OR
+  const lonClause = w <= e ? "lon BETWEEN ? AND ?" : "(lon >= ? OR lon <= ?)";
+  const rows = await c.env.DB.prepare(
+    `SELECT public_id, status, lat, lon, distance_km, created_at
+     FROM bottles WHERE lat BETWEEN ? AND ? AND ${lonClause} LIMIT ?`
+  ).bind(s, n, w, e, MAX_VIEW_BOTTLES + 1).all();
   const nowMs = Date.now();
-  const drifting = drows.results
-    .filter((b) => haversineKm(lat, lon, b.lat as number, b.lon as number) <= VIEW_RADIUS_KM)
-    .map((b) => ({
-      lat: b.lat,
-      lon: b.lon,
-      distance_km: b.distance_km,
-      days_at_sea: Math.max(0, Math.floor(
-        (nowMs - Date.parse(b.created_at as string)) / 86400e3)),
-    }));
+  const bottles = rows.results.slice(0, MAX_VIEW_BOTTLES).map((b) => ({
+    public_id: b.public_id,
+    status: b.status,
+    lat: b.lat,
+    lon: b.lon,
+    distance_km: b.distance_km,
+    days_at_sea: Math.max(0, Math.floor((nowMs - Date.parse(b.created_at as string)) / 86400e3)),
+  }));
+  return c.json({ bottles, truncated: rows.results.length > MAX_VIEW_BOTTLES });
+});
 
-  return c.json({ bottles, drifting });
+// 瓶子轨迹（公开，按 public_id）：只给轨迹点与漂流统计，绝不含信件内容
+app.get("/api/bottles/:publicId/trajectory", async (c) => {
+  const b = await c.env.DB.prepare(
+    `SELECT id, status, distance_km, launched_at, created_at FROM bottles WHERE public_id = ?`
+  ).bind(c.req.param("publicId")).first();
+  if (!b) return err(c, 404, "not_found", "Bottle not found");
+  const track = await c.env.DB.prepare(
+    `SELECT lat, lon, ts FROM track_points WHERE bottle_id = ? ORDER BY ts ASC`
+  ).bind(b.id).all();
+  return c.json({
+    status: b.status,
+    distance_km: b.distance_km,
+    launched_at: b.launched_at,
+    created_at: b.created_at,
+    track: track.results.map((p) => ({ lat: p.lat, lon: p.lon, ts: p.ts })),
+  });
 });
 
 /** 找到搁浅瓶并做距离校验；返回 Response 表示已出错。 */
