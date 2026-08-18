@@ -8,6 +8,7 @@ dependencies = [
   "numpy>=2",
   "h5netcdf>=1",
   "requests>=2",
+  "pillow>=10.1",
 ]
 
 [dependency-groups]
