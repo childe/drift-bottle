@@ -38,6 +38,7 @@ async function checkSubmission(c: C, content: unknown, lat: unknown, lon: unknow
 app.post("/api/bottles", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { content, lat, lon } = body as Record<string, unknown>;
+  const lang = (body as Record<string, unknown>).lang === "zh" ? "zh" : "en";
   const bad = await checkSubmission(c, content, lat, lon);
   if (bad) return bad;
   const mask = await getMask(c.env);
@@ -50,9 +51,9 @@ app.post("/api/bottles", async (c) => {
   // 单事务写入：batch 全成或全败，靠唯一 public_id 关联刚插入的 bottle 行，杜绝孤儿行
   await c.env.DB.batch([
     c.env.DB.prepare(
-      `INSERT INTO bottles (public_id, status, lat, lon, launched_at, simulated_to, distance_km, created_at)
-       VALUES (?, 'drifting', ?, ?, ?, ?, 0, ?)`
-    ).bind(publicId, snap.lat, snap.lon, t, day, t),
+      `INSERT INTO bottles (public_id, status, lat, lon, launched_at, simulated_to, distance_km, created_at, lang)
+       VALUES (?, 'drifting', ?, ?, ?, ?, 0, ?, ?)`
+    ).bind(publicId, snap.lat, snap.lon, t, day, t, lang),
     c.env.DB.prepare(
       `INSERT INTO tokens (token, bottle_id, role, created_at)
        SELECT ?, id, 'dropper', ? FROM bottles WHERE public_id = ?`
