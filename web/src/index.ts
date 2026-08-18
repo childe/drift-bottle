@@ -4,8 +4,9 @@ import { newToken, newPublicId } from "./ids";
 import { haversineKm, bboxAround } from "./geo";
 import { getMask } from "./ocean";
 import { moderate } from "./moderation";
+import { ogMetaTags, injectHead } from "./og";
 
-export type Env = { DB: D1Database; AI: Ai; ASSETS: Fetcher };
+export type Env = { DB: D1Database; AI: Ai; ASSETS: Fetcher; OG: R2Bucket };
 
 const app = new Hono<{ Bindings: Env }>();
 const PICKUP_RADIUS_KM = 30;
@@ -38,6 +39,7 @@ async function checkSubmission(c: C, content: unknown, lat: unknown, lon: unknow
 app.post("/api/bottles", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { content, lat, lon } = body as Record<string, unknown>;
+  const lang = (body as Record<string, unknown>).lang === "zh" ? "zh" : "en";
   const bad = await checkSubmission(c, content, lat, lon);
   if (bad) return bad;
   const mask = await getMask(c.env);
@@ -50,9 +52,9 @@ app.post("/api/bottles", async (c) => {
   // 单事务写入：batch 全成或全败，靠唯一 public_id 关联刚插入的 bottle 行，杜绝孤儿行
   await c.env.DB.batch([
     c.env.DB.prepare(
-      `INSERT INTO bottles (public_id, status, lat, lon, launched_at, simulated_to, distance_km, created_at)
-       VALUES (?, 'drifting', ?, ?, ?, ?, 0, ?)`
-    ).bind(publicId, snap.lat, snap.lon, t, day, t),
+      `INSERT INTO bottles (public_id, status, lat, lon, launched_at, simulated_to, distance_km, created_at, lang)
+       VALUES (?, 'drifting', ?, ?, ?, ?, 0, ?, ?)`
+    ).bind(publicId, snap.lat, snap.lon, t, day, t, lang),
     c.env.DB.prepare(
       `INSERT INTO tokens (token, bottle_id, role, created_at)
        SELECT ?, id, 'dropper', ? FROM bottles WHERE public_id = ?`
@@ -178,7 +180,57 @@ app.post("/api/bottles/:publicId/pickup", async (c) => {
   return c.json({ token });
 });
 
-// 追踪页：/b/<token> 由前端 track.html 渲染
-app.get("/b/*", (c) => c.env.ASSETS.fetch(new Request(new URL("/track.html", c.req.url))));
+// 追踪页：/b/<token> 动态注入 per-bottle OG 预览卡 meta；查不到/异常回代纯页面（fail-open）
+app.get("/b/*", async (c) => {
+  const plain = () => c.env.ASSETS.fetch(new Request(new URL("/track.html", c.req.url)));
+  const token = c.req.path.replace(/^\/b\//, "").split("/")[0];
+  if (!token) return plain();
+  let row: Record<string, unknown> | null = null;
+  try {
+    row = await c.env.DB.prepare(
+      `SELECT b.public_id AS publicId, b.status, b.distance_km AS distanceKm,
+              b.created_at AS createdAt, b.lang AS lang
+       FROM tokens t JOIN bottles b ON b.id = t.bottle_id WHERE t.token = ?`
+    ).bind(token).first();
+  } catch {
+    row = null;
+  }
+  if (!row) return plain();
+  const html = await (await plain()).text();
+  const origin = new URL(c.req.url).origin;
+  const days = Math.max(
+    0,
+    Math.floor((Date.now() - Date.parse(String(row.createdAt))) / 86400000)
+  );
+  const dayStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const tags = ogMetaTags({
+    origin,
+    publicId: String(row.publicId),
+    lang: row.lang === "zh" ? "zh" : "en",
+    days,
+    distanceKm: Number(row.distanceKm) || 0,
+    status: String(row.status),
+    canonicalUrl: `${origin}/b/${token}`,
+    dayStamp,
+  });
+  return c.html(injectHead(html, tags));
+});
+
+// OG 图：从 R2 读 og/{public_id}.png，缺失/异常回退默认卡（fail-open）
+app.get("/og/:file", async (c) => {
+  const fallback = () => c.env.ASSETS.fetch(new Request(new URL("/og-default.png", c.req.url)));
+  const m = c.req.param("file").match(/^([A-Za-z0-9]{12})\.png$/);
+  if (!m) return fallback();
+  let obj: R2ObjectBody | null = null;
+  try {
+    obj = await c.env.OG.get(`og/${m[1]}.png`);
+  } catch {
+    obj = null;
+  }
+  if (!obj) return fallback();
+  return new Response(obj.body, {
+    headers: { "content-type": "image/png", "cache-control": "public, max-age=3600" },
+  });
+});
 
 export default app;

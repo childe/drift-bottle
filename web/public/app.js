@@ -60,7 +60,7 @@ document.getElementById("dropBtn").onclick = () => {
       const content = document.getElementById("letter").value;
       const data = await api("/api/bottles", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ content, lat: userPos.lat, lon: userPos.lon }),
+        body: JSON.stringify({ content, lat: userPos.lat, lon: userPos.lon, lang: getLang() }),
       });
       saveMine(data.token);
       const url = `${location.origin}/b/${data.token}`;
