@@ -41,6 +41,7 @@ app.post("/api/bottles", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { content, lat, lon } = body as Record<string, unknown>;
   const lang = (body as Record<string, unknown>).lang === "zh" ? "zh" : "en";
+  const openReply = (body as Record<string, unknown>).open_reply === true ? 1 : 0;
   const bad = await checkSubmission(c, content, lat, lon);
   if (bad) return bad;
   const mask = await getMask(c.env);
@@ -53,9 +54,9 @@ app.post("/api/bottles", async (c) => {
   // 单事务写入：batch 全成或全败，靠唯一 public_id 关联刚插入的 bottle 行，杜绝孤儿行
   await c.env.DB.batch([
     c.env.DB.prepare(
-      `INSERT INTO bottles (public_id, status, lat, lon, launched_at, simulated_to, distance_km, created_at, lang)
-       VALUES (?, 'drifting', ?, ?, ?, ?, 0, ?, ?)`
-    ).bind(publicId, snap.lat, snap.lon, t, day, t, lang),
+      `INSERT INTO bottles (public_id, status, lat, lon, launched_at, simulated_to, distance_km, created_at, lang, open_reply)
+       VALUES (?, 'drifting', ?, ?, ?, ?, 0, ?, ?, ?)`
+    ).bind(publicId, snap.lat, snap.lon, t, day, t, lang, openReply),
     c.env.DB.prepare(
       `INSERT INTO tokens (token, bottle_id, role, created_at)
        SELECT ?, id, 'dropper', ? FROM bottles WHERE public_id = ?`
@@ -128,7 +129,7 @@ app.get("/api/bottles/view", async (c) => {
   // 经度可能跨反经线（w>e）：普通区间用 BETWEEN，跨越时用 OR
   const lonClause = w <= e ? "lon BETWEEN ? AND ?" : "(lon >= ? OR lon <= ?)";
   const rows = await c.env.DB.prepare(
-    `SELECT public_id, status, lat, lon, distance_km, created_at
+    `SELECT public_id, status, lat, lon, distance_km, created_at, open_reply
      FROM bottles WHERE lat BETWEEN ? AND ? AND ${lonClause} LIMIT ?`
   ).bind(s, n, w, e, MAX_VIEW_BOTTLES + 1).all();
   const nowMs = Date.now();
@@ -138,6 +139,7 @@ app.get("/api/bottles/view", async (c) => {
     lat: b.lat,
     lon: b.lon,
     distance_km: b.distance_km,
+    open_reply: !!b.open_reply,
     days_at_sea: Math.max(0, Math.floor((nowMs - Date.parse(b.created_at as string)) / 86400e3)),
   }));
   return c.json({ bottles, truncated: rows.results.length > MAX_VIEW_BOTTLES });
@@ -165,12 +167,13 @@ app.get("/api/bottles/:publicId/trajectory", async (c) => {
 async function findBeachedNearby(c: C, publicId: string, lat: unknown, lon: unknown) {
   if (!validCoords(lat, lon)) return err(c, 400, "bad_coords", "Invalid coordinates");
   const b = await c.env.DB.prepare(
-    `SELECT id, status, lat, lon FROM bottles WHERE public_id = ?`
+    `SELECT id, status, lat, lon, open_reply FROM bottles WHERE public_id = ?`
   ).bind(publicId).first();
   if (!b) return err(c, 404, "not_found", "No such bottle here");
-  // public_id 只经由 nearby（仅列出 beached 瓶）泄露，非 beached 必然是刚被捡走重新入海
+  // public_id 只经由 nearby / 探索地图泄露，非 beached 必然是刚被捡走重新入海
   if (b.status !== "beached") return err(c, 409, "already_picked", "This bottle was just picked up by someone else");
-  if (haversineKm(lat as number, lon as number, b.lat as number, b.lon as number) > PICKUP_RADIUS_KM)
+  // open_reply 瓶：任何地方都能回，跳过 30km 距离校验；普通瓶仍限就近
+  if (!b.open_reply && haversineKm(lat as number, lon as number, b.lat as number, b.lon as number) > PICKUP_RADIUS_KM)
     return err(c, 403, "too_far", "You are too far from this bottle");
   return b as { id: number; lat: number; lon: number };
 }

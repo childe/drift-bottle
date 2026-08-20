@@ -53,6 +53,7 @@ document.getElementById("dropBtn").onclick = () => {
   showModal(`
     <h3>${t("drop_modal_title", getLang())}</h3>
     <textarea id="letter" maxlength="500" placeholder="${t("drop_placeholder", getLang())}"></textarea>
+    <label class="open-reply" style="display:block;margin:8px 0;font-size:13px;color:#4a5568"><input type="checkbox" id="openReply" style="margin-right:6px;vertical-align:middle"> ${t("open_reply_label", getLang())}</label>
     <p class="error" id="dropErr"></p>
     <button id="submitDrop">${t("drop_submit", getLang())}</button>`);
   document.getElementById("submitDrop").onclick = async () => {
@@ -60,7 +61,8 @@ document.getElementById("dropBtn").onclick = () => {
       const content = document.getElementById("letter").value;
       const data = await api("/api/bottles", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ content, lat: userPos.lat, lon: userPos.lon, lang: getLang() }),
+        body: JSON.stringify({ content, lat: userPos.lat, lon: userPos.lon, lang: getLang(),
+          open_reply: document.getElementById("openReply").checked }),
       });
       saveMine(data.token);
       const url = `${location.origin}/b/${data.token}`;
@@ -138,6 +140,12 @@ async function loadView() {
   } catch (e) { /* 视野加载失败不打断主流程 */ }
 }
 
+function havKm(la1, lo1, la2, lo2) {
+  const r = Math.PI / 180, dla = (la2 - la1) * r, dlo = (lo2 - lo1) * r;
+  const a = Math.sin(dla / 2) ** 2 + Math.cos(la1 * r) * Math.cos(la2 * r) * Math.sin(dlo / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(a));
+}
+
 // 点击瓶子：画出它的漂流轨迹（只看轨迹，不显示信件内容）
 async function showTrajectory(bo) {
   trajLayer.clearLayers();
@@ -157,14 +165,28 @@ async function showTrajectory(bo) {
     const box = document.createElement("div");
     box.innerHTML = `<div>${tf("traj_popup", getLang(),
       { status: statusLabel, days: bo.days_at_sea, km: Math.round(bo.distance_km) })}</div>`;
-    // 搁浅瓶给「读信/捡起」入口；实际能否读由后端按 30km 判定（远则 403）
+    // 搁浅瓶：open_reply 瓶任何人可回；普通瓶仅你 30km 内可回（远则给提示）
     if (bo.status === "beached") {
-      const btn = document.createElement("button");
-      btn.className = "secondary";
-      btn.style.marginTop = "6px";
-      btn.textContent = t("read_pick_btn", getLang());
-      btn.onclick = () => { map.closePopup(); openBottle(bo); };
-      box.appendChild(btn);
+      if (bo.open_reply) {
+        const badge = document.createElement("div");
+        badge.textContent = t("open_badge", getLang());
+        badge.style.cssText = "margin-top:4px;color:#2f6aa0;font-size:12px";
+        box.appendChild(badge);
+      }
+      const near = userPos && havKm(userPos.lat, userPos.lon, bo.lat, bo.lon) <= 30;
+      if (bo.open_reply || near) {
+        const btn = document.createElement("button");
+        btn.className = "secondary";
+        btn.style.marginTop = "6px";
+        btn.textContent = t("read_pick_btn", getLang());
+        btn.onclick = () => { map.closePopup(); openBottle(bo); };
+        box.appendChild(btn);
+      } else {
+        const hint = document.createElement("div");
+        hint.textContent = t("only_near_hint", getLang());
+        hint.style.cssText = "margin-top:6px;color:#888;font-size:12px";
+        box.appendChild(hint);
+      }
     }
     L.popup().setLatLng(pts[pts.length - 1] || [bo.lat, bo.lon]).setContent(box).openOn(map);
   } catch (e) { /* ignore */ }
